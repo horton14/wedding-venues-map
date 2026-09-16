@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>My Wedding Venues</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+
+/* ── ROOT: full screen, no scroll, portrait/landscape adaptive ── */
+html,body{
+  width:100%;height:100%;
+  overflow:hidden;
+  background:#141301;
+  font-family:'Archivo',sans-serif;
+}
+
+/* Portrait (phones): normal vertical layout */
+@media (orientation:portrait){
+  html,body{ touch-action:pan-y; }
+}
+
+/* Landscape (tablets, desktop): use full width */
+@media (orientation:landscape){
+  html,body{ touch-action:pan-x; }
+}
+
+/* ── MAP fills entire screen ── */
+#map{
+  position:fixed;
+  top:0;left:0;right:0;bottom:0;
+  width:100vw;height:100vh;
+  z-index:0;
+}
+.leaflet-control-attribution,.leaflet-control-zoom{display:none;}
+.leaflet-tile{filter:grayscale(0.3) sepia(0.2) brightness(0.96) contrast(0.92);}
+
+/* ── PINS ── */
+.venue-pin{width:22px;height:22px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid #FEF8EC;box-shadow:0 2px 6px rgba(20,19,1,.3);cursor:pointer;transition:transform .15s,box-shadow .15s;}
+.venue-pin:hover{transform:rotate(-45deg) scale(1.25);box-shadow:0 3px 10px rgba(20,19,1,.4);}
+.venue-pin.registry{background:#6B6D76;}
+.venue-pin.church{background:#8B6914;}
+.venue-pin.default{background:#C1121F;}
+.venue-pin.intl{width:28px;height:28px;background:#C1121F;display:flex;align-items:center;justify-content:center;border-radius:50% 50% 50% 0;border:2px solid #FEF8EC;}
+.venue-pin.intl::after{content:'★';color:#FEF8EC;font-size:13px;transform:rotate(45deg);display:block;}
+.venue-pin.boat{width:24px;height:24px;border-radius:50%;background:#C1121F;border:2px solid #FEF8EC;display:flex;align-items:center;justify-content:center;transform:none;}
+.venue-pin.boat::after{content:'⛵';font-size:13px;}
+
+/* ── FADE OVERLAY ── */
+#fade-overlay{
+  position:fixed;inset:0;z-index:50;
+  background:#141301;
+  pointer-events:none;
+  opacity:0;
+  transition:opacity 2s ease;
+  display:flex;align-items:center;justify-content:center;
+}
+#fade-overlay.active{ opacity:1; pointer-events:all; }
+#fade-overlay.reveal{ opacity:0; pointer-events:none; }
+
+
+
+/* ── INTRO SCREEN ── */
+#intro{
+  position:fixed;inset:0;z-index:60;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  padding:clamp(20px,5vw,48px) clamp(16px,6vw,60px);
+  text-align:center;
+  background:#141301;
+  transition:opacity .6s ease, transform .6s ease;
+}
+#intro.hide{opacity:0;transform:translateY(-16px);pointer-events:none;}
+
+.logo-img{
+  width:clamp(56px,12vw,96px);
+  height:clamp(56px,12vw,96px);
+  object-fit:contain;
+  margin-bottom:clamp(20px,4vw,36px);
+  border-radius:8px;
+}
+
+h1{
+  font-family:'Archivo Black',sans-serif;
+  font-size:clamp(28px,7vw,72px);
+  color:#FEF8EC;
+  letter-spacing:-.01em;
+  line-height:1.05;
+  text-transform:uppercase;
+  margin-bottom:clamp(24px,4vw,40px);
+  max-width:800px;
+}
+h1 span{color:#C1121F;}
+
+.body-text{
+  font-family:'Archivo',sans-serif;
+  font-size:clamp(13px,2.2vw,18px);
+  color:#FEF8EC;
+  opacity:.78;
+  line-height:1.75;
+  max-width:560px;
+  margin-bottom:clamp(32px,5vw,56px);
+}
+.body-text em{font-style:italic;opacity:1;color:#FEF8EC;}
+.pop-phrase{
+  display:block;
+  font-family:'Archivo Black',sans-serif;
+  font-weight:400;
+  text-transform:uppercase;
+  letter-spacing:.06em;
+  color:#FEF8EC;
+  opacity:1;
+  margin-top:0.5em;
+}
+
+.cta-btn{
+  display:inline-flex;align-items:center;gap:14px;
+  background:#C1121F;color:#FEF8EC;
+  font-family:'Archivo Black',sans-serif;
+  font-size:clamp(13px,2.8vw,17px);
+  letter-spacing:.18em;text-transform:uppercase;
+  padding:clamp(16px,3vw,22px) clamp(32px,5vw,52px);
+  border-radius:4px;border:none;cursor:pointer;
+  transition:background .2s,transform .15s;
+}
+.cta-btn:hover{background:#FEF8EC;color:#141301;}
+.cta-btn:active{transform:scale(.97);}
+.cta-btn .arrow{font-size:20px;transition:transform .2s;}
+.cta-btn:hover .arrow{transform:translateX(5px);}
+
+.stat-row{
+  display:flex;align-items:center;gap:0;
+  margin-top:clamp(40px,6vw,64px);
+  padding-top:clamp(28px,4vw,44px);
+  border-top:1px solid rgba(254,248,236,.1);
+}
+.stat{display:flex;flex-direction:column;align-items:center;gap:9px;padding:0 clamp(18px,4.5vw,52px);}
+.stat+.stat{border-left:1px solid rgba(254,248,236,.12);}
+.stat-number{font-family:'Archivo Black',sans-serif;font-size:clamp(26px,5.5vw,52px);color:#FEF8EC;letter-spacing:-.02em;line-height:1;}
+.stat-label{font-family:'Archivo',sans-serif;font-size:clamp(8px,1.8vw,11px);letter-spacing:.16em;text-transform:uppercase;color:#FEF8EC;opacity:.55;}
+
+
+
+
+/* ── MAP UI CHROME ── */
+.ui-top{
+  position:fixed;
+  top:0;left:0;right:0;z-index:30;
+  display:flex;justify-content:space-between;align-items:flex-start;
+  padding:max(12px, env(safe-area-inset-top, 12px)) 14px 8px;
+  pointer-events:none;
+  opacity:0;transition:opacity .6s ease;
+}
+.ui-top.show{opacity:1;pointer-events:all;}
+.ui-labels{display:flex;flex-direction:column;gap:5px;pointer-events:all;}
+.lbl-main{background:#141301;border-radius:7px;padding:6px 11px;font-family:'Archivo Black',sans-serif;font-size:clamp(9px,2.2vw,13px);color:#FEF8EC;letter-spacing:.1em;text-transform:uppercase;display:inline-block;}
+.lbl-main span{color:#C1121F;}
+.lbl-count{background:#C1121F;border-radius:7px;padding:5px 11px;font-family:'Archivo Black',sans-serif;font-size:clamp(8px,1.8vw,11px);color:#FEF8EC;letter-spacing:.1em;text-transform:uppercase;display:inline-block;}
+.lbl-intl{background:#141301;border-radius:7px;padding:4px 9px;font-family:'Archivo Black',sans-serif;font-size:clamp(7px,1.6vw,9px);color:#d4a86a;letter-spacing:.1em;text-transform:uppercase;display:inline-block;}
+
+/* ── MAP CONTROLS: zoom + fullscreen ── */
+.map-controls{
+  position:fixed;bottom:clamp(80px,12vh,110px);right:14px;z-index:30;
+  display:flex;flex-direction:column;gap:5px;
+  opacity:0;transition:opacity .6s ease;
+}
+@media(max-width:600px){
+  .map-controls{ bottom:clamp(70px,10vh,100px); }
+}
+.map-controls.show{opacity:1;}
+.ctrl-btn{
+  width:clamp(40px,9vw,50px);height:clamp(40px,9vw,50px);
+  background:#FEF8EC;border:.5px solid #141301;border-radius:8px;
+  font-family:'Archivo Black',sans-serif;
+  font-size:clamp(18px,4.5vw,24px);
+  color:#141301;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.18);
+  -webkit-user-select:none;user-select:none;
+  transition:background .15s,transform .1s;
+}
+.ctrl-btn:active{background:#f0e8d0;transform:scale(.94);}
+.ctrl-btn.fullscreen-btn{font-size:clamp(15px,3.5vw,20px);}
+
+/* ── LEGEND — bigger ── */
+.legend{
+  position:fixed;bottom:20px;right:14px;z-index:30;
+  background:rgba(254,248,236,.97);
+  border:.5px solid #c4b898;border-radius:10px;
+  padding:14px 16px;
+  display:flex;flex-direction:column;gap:10px;
+  box-shadow:0 2px 12px rgba(0,0,0,.14);
+  opacity:0;transition:opacity .6s ease;
+}
+.legend.show{opacity:1;}
+.li{display:flex;align-items:center;gap:10px;}
+.ld{width:14px;height:14px;border-radius:50%;flex-shrink:0;}
+.ll{font-family:'Archivo Black',sans-serif;font-size:clamp(10px,2vw,12px);color:#141301;letter-spacing:.06em;text-transform:uppercase;}
+
+/* Mobile legend toggle */
+.legend-btn{
+  position:fixed;bottom:20px;left:14px;z-index:30;
+  background:#141301;border:none;border-radius:8px;
+  padding:10px 14px;cursor:pointer;
+  font-family:'Archivo Black',sans-serif;
+  font-size:clamp(9px,2vw,11px);color:#FEF8EC;
+  letter-spacing:.08em;text-transform:uppercase;
+  display:none;opacity:0;transition:opacity .6s ease;
+}
+.legend-btn.show{opacity:1;}
+
+@media(max-width:600px){
+  .legend{display:none;}
+  .legend.mobile-show{display:flex;}
+  .legend-btn{display:block;}
+}
+
+/* ── PLANE ANIMATION ── */
+#plane-layer{
+  position:fixed;inset:0;z-index:25;
+  pointer-events:none;
+  overflow:hidden;
+}
+.flight-plane{
+  position:fixed;
+  font-size:clamp(18px,3vw,26px);
+  line-height:1;
+  opacity:0;
+  transform-origin:center center;
+  transition:opacity 0.4s ease;
+  pointer-events:none;
+  filter:drop-shadow(0 2px 4px rgba(20,19,1,0.4));
+}
+.flight-plane.visible{ opacity:1; }
+.flight-plane.fading{ opacity:0; }
+
+/* Destination pulse ring */
+.dest-pulse{
+  position:fixed;
+  width:40px;height:40px;
+  border-radius:50%;
+  border:2px solid #C1121F;
+  opacity:0;
+  transform:translate(-50%,-50%) scale(0.5);
+  transition:opacity 0.3s ease, transform 0.5s ease;
+  pointer-events:none;
+}
+.dest-pulse.show{
+  opacity:0.7;
+  transform:translate(-50%,-50%) scale(1);
+}
+
+/* ── VENUE PANEL ── */
+.panel{
+  position:fixed;bottom:0;left:0;right:0;z-index:40;
+  background:#FEF8EC;border-top:2px solid #C1121F;
+  border-radius:16px 16px 0 0;
+  transform:translateY(100%);
+  transition:transform .32s cubic-bezier(.22,1,.36,1);
+  max-height:72vh;
+  display:flex;flex-direction:column;
+  box-shadow:0 -4px 24px rgba(20,19,1,.2);
+  overflow:hidden;
+}
+.panel.open{transform:translateY(0);}
+.drag-bar{width:36px;height:4px;border-radius:2px;background:rgba(255,255,255,0.6);margin:8px auto 0;flex-shrink:0;position:fixed;top:0;left:50%;transform:translateX(-50%);z-index:2;}
+.pscroll{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 20px 28px;flex:1;overflow-x:hidden;}
+.pclose{
+  position:fixed;top:10px;right:12px;
+  width:40px;height:40px;
+  border-radius:50%;
+  background:#141301;border:none;
+  color:#FEF8EC;font-size:16px;
+  cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  -webkit-tap-highlight-color:transparent;
+  touch-action:manipulation;
+  z-index:10;
+  /* Larger invisible tap area for iOS */
+  padding:0;
+}
+.pclose:active,.pclose:focus{background:#C1121F;outline:none;}
+
+/* Hero image */
+.venue-hero{
+  width:calc(100% + 40px);
+  height:clamp(160px,38vw,260px);
+  object-fit:cover;
+  object-position:center center;
+  display:none;
+  margin:-10px -20px 14px -20px;
+  border-radius:14px 14px 0 0;
+  border-bottom:2px solid #C1121F;
+}
+.venue-hero.loaded{display:block;}
+.venue-hero-placeholder{
+  display:none;
+}
+
+.ptag{font-size:clamp(8px,2.2vw,10px);letter-spacing:.12em;text-transform:uppercase;color:#FEF8EC;background:#C1121F;padding:3px 10px;border-radius:20px;display:inline-block;margin-bottom:8px;font-family:'Archivo Black',sans-serif;}
+.pname{font-size:clamp(15px,4vw,18px);color:#141301;margin-bottom:3px;font-family:'Archivo Black',sans-serif;text-transform:uppercase;letter-spacing:.04em;line-height:1.2;}
+.ploc{font-size:clamp(10px,2.5vw,12px);color:#6B6D76;margin-bottom:8px;text-transform:uppercase;letter-spacing:.08em;line-height:1.4;}
+.pdesc{font-size:clamp(12px,3vw,14px);color:#141301;line-height:1.65;margin-bottom:12px;opacity:.85;}
+.pmeta{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:4px;}
+.pmi{font-size:clamp(9px,2vw,11px);color:#6B6D76;text-transform:uppercase;letter-spacing:.08em;}
+.pmi strong{color:#141301;display:block;font-size:clamp(11px,2.5vw,13px);font-family:'Archivo Black',sans-serif;font-weight:400;text-transform:uppercase;}
+
+.panel-btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;}
+.pbtn{
+  display:inline-block;padding:11px 20px;
+  background:#141301;color:#FEF8EC;border-radius:8px;
+  font-size:clamp(10px,2.5vw,12px);font-family:'Archivo Black',sans-serif;
+  cursor:pointer;border:none;letter-spacing:.1em;text-transform:uppercase;
+  text-decoration:none;
+}
+.pbtn:active{background:#C1121F;}
+.pbtn.website-btn{background:#C1121F;}
+.pbtn.website-btn:active{background:#141301;}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="fade-overlay"></div>
+
+<!-- INTRO -->
+<div id="intro">
+  <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABDgAAAQ4CAYAAAGbF1wZAAAACXBIWXMAAC4jAAAuIwF4pT92AAAKxGlUWHRYTUw6Y29tLmFkb2JlLnhtcAAAAAAAPD94cGFja2V0IGJlZ2luPSLvu78iIGlkPSJXNU0wTXBDZWhpSHpyZVN6TlRjemtjOWQiPz4gPHg6eG1wbWV0YSB4bWxuczp4PSJhZG9iZTpuczptZXRhLyIgeDp4bXB0az0iQWRvYmUgWE1QIENvcmUgOS4xLWMwMDIgNzkuYTZhNjM5NiwgMjAyNC8wMy8xMi0wNzo0ODoyMyAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvIiB4bWxuczpkYz0iaHR0cDovL3B1cmwub3JnL2RjL2VsZW1lbnRzLzEuMS8iIHhtbG5zOnBob3Rvc2hvcD0iaHR0cDovL25zLmFkb2JlLmNvbS9waG90b3Nob3AvMS4wLyIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0RXZ0PSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VFdmVudCMiIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp0aWZmPSJodHRwOi8vbnMuYWRvYmUuY29tL3RpZmYvMS4wLyIgeG1sbnM6ZXhpZj0iaHR0cDovL25zLmFkb2JlLmNvbS9leGlmLzEuMC8iIHhtcDpDcmVhdG9yVG9vbD0iQWRvYmUgUGhvdG9zaG9wIDI1LjEyIChXaW5kb3dzKSIgeG1wOkNyZWF0ZURhdGU9IjIwMjUtMDEtMzFUMTI6MjE6MjJaIiB4bXA6TW9kaWZ5RGF0ZT0iMjAyNS0wMy0yMFQwOTowNzoxNloiIHhtcDpNZXRhZGF0YURhdGU9IjIwMjUtMDMtMjBUMDk6MDc6MTZaIiBkYzpmb3JtYXQ9ImltYWdlL3BuZyIgcGhvdG9zaG9wOkNvbG9yTW9kZT0iMyIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDo2NjliN2U0Yy1mNDY0LTkyNDItODIzZi03MzM3ZTgyMzgyMTUiIHhtcE1NOkRvY3VtZW50SUQ9ImFkb2JlOmRvY2lkOnBob3Rvc2hvcDo5ODMyZmRiYy1lY2QwLWY5NDQtOGEzNS02YWQ5M2U5NzFiNDUiIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDo4NDM5NWVlZS1mYWZiLWEyNDEtYmE4MC0wMTkyOTgwMjU3MWEiIHRpZmY6T3JpZW50YXRpb249IjEiIHRpZmY6WFJlc29sdXRpb249IjMwMDAwMDAvMTAwMDAiIHRpZmY6WVJlc29sdXRpb249IjMwMDAwMDAvMTAwMDAiIHRpZmY6UmVzb2x1dGlvblVuaXQ9IjIiIGV4aWY6Q29sb3JTcGFjZT0iNjU1MzUiIGV4aWY6UGl4ZWxYRGltZW5zaW9uPSIxMDgwIiBleGlmOlBpeGVsWURpbWVuc2lvbj0iMTA4MCI+IDxwaG90b3Nob3A6VGV4dExheWVycz4gPHJkZjpCYWc+IDxyZGY6bGkgcGhvdG9zaG9wOkxheWVyTmFtZT0iQUgiIHBob3Rvc2hvcDpMYXllclRleHQ9IkFIIi8+IDwvcmRmOkJhZz4gPC9waG90b3Nob3A6VGV4dExheWVycz4gPHhtcE1NOkhpc3Rvcnk+IDxyZGY6U2VxPiA8cmRmOmxpIHN0RXZ0OmFjdGlvbj0iY3JlYXRlZCIgc3RFdnQ6aW5zdGFuY2VJRD0ieG1wLmlpZDo4NDM5NWVlZS1mYWZiLWEyNDEtYmE4MC0wMTkyOTgwMjU3MWEiIHN0RXZ0OndoZW49IjIwMjUtMDEtMzFUMTI6MjE6MjJaIiBzdEV2dDpzb2Z0d2FyZUFnZW50PSJBZG9iZSBQaG90b3Nob3AgMjUuMTIgKFdpbmRvd3MpIi8+IDxyZGY6bGkgc3RFdnQ6YWN0aW9uPSJzYXZlZCIgc3RFdnQ6aW5zdGFuY2VJRD0ieG1wLmlpZDo3ZjEwYzFlYy0yNDE2LWI2NGItOGY4OC1lY2E1MDBiZWM3NmYiIHN0RXZ0OndoZW49IjIwMjUtMDEtMzFUMTI6MjU6MTFaIiBzdEV2dDpzb2Z0d2FyZUFnZW50PSJBZG9iZSBQaG90b3Nob3AgMjUuMTIgKFdpbmRvd3MpIiBzdEV2dDpjaGFuZ2VkPSIvIi8+IDxyZGY6bGkgc3RFdnQ6YWN0aW9uPSJzYXZlZCIgc3RFdnQ6aW5zdGFuY2VJRD0ieG1wLmlpZDo5MGM1ZDJlMC04YTQ5LTI1NGYtOTBmMy1kMjZkODM0N2RiMjYiIHN0RXZ0OndoZW49IjIwMjUtMDMtMjBUMDk6MDc6MTZaIiBzdEV2dDpzb2Z0d2FyZUFnZW50PSJBZG9iZSBQaG90b3Nob3AgMjUuMTIgKFdpbmRvd3MpIiBzdEV2dDpjaGFuZ2VkPSIvIi8+IDxyZGY6bGkgc3RFdnQ6YWN0aW9uPSJjb252ZXJ0ZWQiIHN0RXZ0OnBhcmFtZXRlcnM9ImZyb20gZG9jdW1lbnQvdm5kLmFkb2JlLmNwc2QrZGN4IHRvIGltYWdlL3BuZyIvPiA8cmRmOmxpIHN0RXZ0OmFjdGlvbj0iZGVyaXZlZCIgc3RFdnQ6cGFyYW1ldGVycz0iY29udmVydGVkIGZyb20gZG9jdW1lbnQvdm5kLmFkb2JlLmNwc2QrZGN4IHRvIGltYWdlL3BuZyIvPiA8cmRmOmxpIHN0RXZ0OmFjdGlvbj0ic2F2ZWQiIHN0RXZ0Omluc3RhbmNlSUQ9InhtcC5paWQ6NjY5YjdlNGMtZjQ2NC05MjQyLTgyM2YtNzMzN2U4MjM4MjE1IiBzdEV2dDp3aGVuPSIyMDI1LTAzLTIwVDA5OjA3OjE2WiIgc3RFdnQ6c29mdHdhcmVBZ2VudD0iQWRvYmUgUGhvdG9zaG9wIDI1LjEyIChXaW5kb3dzKSIgc3RFdnQ6Y2hhbmdlZD0iLyIvPiA8L3JkZjpTZXE+IDwveG1wTU06SGlzdG9yeT4gPHhtcE1NOkRlcml2ZWRGcm9tIHN0UmVmOmluc3RhbmNlSUQ9InhtcC5paWQ6OTBjNWQyZTAtOGE0OS0yNTRmLTkwZjMtZDI2ZDgzNDdkYjI2IiBzdFJlZjpkb2N1bWVudElEPSJ4bXAuZGlkOjg0Mzk1ZWVlLWZhZmItYTI0MS1iYTgwLTAxOTI5ODAyNTcxYSIgc3RSZWY6b3JpZ2luYWxEb2N1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ngYHAAAAUJ4GBwAAAFCeBgcAAABQngYHAAAAUJ4GBwAAAFCeBgcAAABQngYHAAAAUJ4GBwAAAFDeR70HsODX3gMAAAAAFt3pPYD3WcEBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAAlKfBAQAAAJSnwQEAAACUp8EBAAAA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" alt="AH Photography" class="logo-img">
+  <h1>Every <span>Venue.</span><br>Every <span>Story.</span></h1>
+  <p class="body-text">
+    A registry office in Dudley. A castle above Lake Bled. A tithe barn older than memory. A boat on the Severn. Every pin on this map is a real couple, a real day — and the privilege of being trusted to photograph them all.<br><strong class="pop-phrase">That's why I do this.</strong>
+  </p>
+  <button class="cta-btn" id="explore-btn">
+    EXPLORE THE MAP <span class="arrow">→</span>
+  </button>
+  <div class="stat-row">
+    <div class="stat"><div class="stat-number"><span id="cw">0</span>+</div><div class="stat-label">Weddings</div></div>
+    <div class="stat"><div class="stat-number"><span id="cv">0</span>+</div><div class="stat-label">Venues</div></div>
+    <div class="stat"><div class="stat-number"><span id="cc">0</span></div><div class="stat-label">Counties</div></div>
+    <div class="stat"><div class="stat-number"><span id="ck">0</span></div><div class="stat-label">Countries</div></div>
+  </div>
+</div>
+
+
+<!-- MAP CHROME -->
+<div class="ui-top" id="ui-top">
+  <div class="ui-labels">
+    <div class="lbl-main">My Wedding <span>Venues</span></div>
+    <div class="lbl-count">113 Venues &amp; Counting</div>
+    <div class="lbl-intl">Now Including International</div>
+  </div>
+</div>
+
+<div class="map-controls" id="map-controls">
+  <div class="ctrl-btn" id="zi" title="Zoom in">+</div>
+  <div class="ctrl-btn" id="zo" title="Zoom out">−</div>
+  <div class="ctrl-btn fullscreen-btn" id="fs-btn" title="Fullscreen">⛶</div>
+</div>
+
+<div class="legend" id="legend">
+  <div class="li"><div class="ld" style="background:#C1121F"></div><span class="ll">Estate / Hotel / Barn / Unique</span></div>
+  <div class="li"><div class="ld" style="background:#6B6D76"></div><span class="ll">Registry Office</span></div>
+  <div class="li"><div class="ld" style="background:#8B6914"></div><span class="ll">Church</span></div>
+  <div class="li"><div class="ld" style="background:#C1121F;outline:3px solid #FEF8EC;outline-offset:-3px"></div><span class="ll">International ★</span></div>
+</div>
+<button class="legend-btn" id="legend-btn">Legend</button>
+
+<!-- VENUE PANEL -->
+<!-- Plane layer -->
+<div id="plane-layer">
+  <div class="flight-plane" id="plane-1">✈️</div>
+  <div class="flight-plane" id="plane-2">✈️</div>
+  <div class="flight-plane" id="plane-3">✈️</div>
+</div>
+
+<div class="panel" id="panel">
+  <div class="drag-bar"></div>
+  <button class="pclose" id="pclose">✕</button>
+  <div class="pscroll">
+    <img class="venue-hero" id="venue-hero" alt="" onload="this.classList.add('loaded');" onerror="this.style.display='none';">
+    <div class="ptag" id="ptag"></div>
+    <div class="pname" id="pname"></div>
+    <div class="ploc" id="ploc"></div>
+    <div class="pdesc" id="pdesc"></div>
+    <div class="pmeta">
+      <div class="pmi"><strong id="pregion"></strong>Region</div>
+      <div class="pmi"><strong id="ptype"></strong>Setting</div>
+    </div>
+    <div class="panel-btns">
+      <a class="pbtn" id="website-btn" href="#" target="_blank" rel="noopener" style="display:none">Visit Website →</a>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── COUNTER ANIMATION ──
+function animateLiveCount() {
+  // Called after markers are placed so liveVenueCount is accurate
+  // We trigger this via a small delay to let the venues array filter run first
+  setTimeout(() => {
+    const el = document.getElementById('cv');
+    const target = parseInt(el.textContent) || 113;
+    animateCount(el, target, 2000);
+  }, 100);
+}
+
+function animateCount(el, target, dur) {
+  const s = performance.now();
+  (function step(now) {
+    const p = Math.min((now-s)/dur,1), e=1-Math.pow(1-p,3);
+    el.textContent = Math.round(e*target);
+    if(p<1) requestAnimationFrame(step);
+  })(performance.now());
+}
+setTimeout(()=>{
+  animateLiveCount();
+  animateCount(document.getElementById('cw'),200,1800);
+  animateCount(document.getElementById('cc'),22,1600);
+  animateCount(document.getElementById('ck'),5,1000);
+},600);;
+
+// ── LEAFLET MAP — start zoomed OUT to show full UK+Europe ──
+if (typeof L === 'undefined') {
+  console.error('Leaflet failed to load — check CSP or CDN');
+}
+const map = L.map('map',{
+  center:[52.0,1.0], zoom:5,
+  zoomControl:false, attributionControl:false,
+  minZoom:4, maxZoom:16,
+});
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  maxZoom:19,
+  subdomains:'abc',
+  attribution:'&copy; <a href="https://openstreetmap.org">OpenStreetMap</a>'
+}).addTo(map);
+
+// Single tile layer - OSM includes labels built in
+const cityLayer = { setOpacity: ()=>{} }; // no-op replacement
+
+function updateCityLabels(){
+  const z=map.getZoom();
+  cityLayer.setOpacity(z>=9?Math.min(1,(z-9)/2):0);
+}
+map.on('zoomend',updateCityLabels);
+
+// ── VENUES (with website URLs where known) ──
+const venues=[
+  {name:"Birmingham Registry Office",loc:"Birmingham City Centre",lat:52.481,lng:-1.897,tag:"Registry Office",type:"Civil Ceremony",region:"West Midlands",desc:"Birmingham's grand civic register office — a beautiful city-centre setting for couples beginning their story in the heart of the second city.",web:"https://www.birmingham.gov.uk/info/20212/marriages_and_civil_partnerships"},
+  {name:"Lichfield Registry Office",loc:"Lichfield, Staffordshire",lat:52.682,lng:-1.826,tag:"Registry Office",type:"Civil Ceremony",region:"Staffordshire",desc:"A charming register office in the historic cathedral city of Lichfield.",web:"https://www.staffordshire.gov.uk/births-ceremonies-and-deaths/registration-offices"},
+  {name:"Coventry Registry Office",loc:"Coventry, West Midlands",lat:52.408,lng:-1.510,tag:"Registry Office",type:"Civil Ceremony",region:"West Midlands",desc:"Coventry's register office — a meaningful place for couples to make their vows.",web:"https://www.coventry.gov.uk/ceremonies-1/marriages"},
+  {name:"Dudley Registry Office",loc:"Dudley, West Midlands",lat:52.512,lng:-2.082,tag:"Registry Office",type:"Civil Ceremony",region:"West Midlands",desc:"A warm and intimate civic ceremony space in the heart of Dudley.",web:"https://www.dudley.gov.uk/residents/register-office/marriages/"},
+  {name:"Solihull Registry Office",loc:"Solihull, West Midlands",lat:52.413,lng:-1.778,tag:"Registry Office",type:"Civil Ceremony",region:"West Midlands",desc:"One of the busiest and most popular register offices in the region.",web:"https://www.solihull.gov.uk/births-marriages-deaths-cemeteries-and-citizenship/marriage-and-civil-partnerships"},
+  {name:"West Midlands Safari Park",loc:"Bewdley, Worcestershire",lat:52.374,lng:-2.320,tag:"Unique Venue",type:"Safari & Grounds",region:"Worcestershire",desc:"One of the most unexpected and joyful wedding venues in the UK — say your vows with giraffes and zebras as your backdrop.",web:"https://www.wmsp.co.uk/weddings",wiki:"West Midlands Safari Park"},
+  {name:"Bordesley Park",loc:"Redditch, Worcestershire",lat:52.298,lng:-1.918,tag:"Country Estate",type:"Estate & Gardens",region:"Worcestershire",desc:"A stunning Georgian manor house set within beautiful Worcestershire countryside.",web:"https://www.bordesleypark.co.uk",wiki:"Bordesley Abbey"},
+  {name:"The Blakelands Estate",loc:"North Worcestershire",lat:52.445,lng:-2.198,tag:"Country Estate",type:"Estate & Grounds",region:"Worcestershire",desc:"A gorgeous private estate offering an exclusive-use experience."},
+  {name:"The Wood Norton",loc:"Evesham, Worcestershire",lat:52.107,lng:-1.953,tag:"Country House",type:"Hotel & Gardens",region:"Worcestershire",desc:"A magnificent Victorian Gothic manor on a hill above the Vale of Evesham.",web:"https://www.thewoodnorton.com",wiki:"Wood Norton Hall"},
+  {name:"Highbury Hall",loc:"Moseley, Birmingham",lat:52.446,lng:-1.889,tag:"Historic Hall",type:"Victorian Hall",region:"Birmingham",desc:"Joseph Chamberlain's former home — a spectacular Victorian Gothic villa in Moseley.",web:"https://www.birmingham.gov.uk/info/50210/civic_catering/1836/weddings_and_civil_partnerships",wiki:"Highbury Hall"},
+  {name:"Brockworth Court Tithe Barn",loc:"Brockworth, Gloucester",lat:51.862,lng:-2.158,tag:"Historic Barn",type:"Tithe Barn",region:"Gloucestershire",desc:"A breathtaking medieval tithe barn — ancient timbers, stone floors, and pure romance.",web:"https://www.priorscourtbarn.co.uk",wiki:"Brockworth Court"},
+  {name:"St George's Church",loc:"Brockworth, Gloucestershire",lat:51.860,lng:-2.153,tag:"Church",type:"Parish Church",region:"Gloucestershire",desc:"A beautiful parish church right beside Brockworth Court."},
+  {name:"St Peter's Church",loc:"Harborne, Birmingham",lat:52.459,lng:-1.958,tag:"Church",type:"Parish Church",region:"Birmingham",desc:"A striking parish church in the leafy suburb of Harborne."},
+  {name:"New Hall Hotel",loc:"Sutton Coldfield, Birmingham",lat:52.556,lng:-1.810,tag:"Historic Hotel",type:"Manor House Hotel",region:"West Midlands",desc:"England's oldest inhabited moated manor house — 26 acres of extraordinary grounds.",web:"https://www.handpickedhotels.co.uk/hotels/new-hall-hotel-spa",wiki:"New Hall, Walmley"},
+  {name:"The Bell at Belbroughton",loc:"Belbroughton, Stourbridge",lat:52.400,lng:-2.118,tag:"Country Pub Venue",type:"Pub & Gardens",region:"Worcestershire",desc:"A beautifully renovated country inn with a relaxed, joyful atmosphere.",web:"https://www.thebellbelbroughton.co.uk"},
+  {name:"The Balmoral Hotel",loc:"Edinburgh, Scotland",lat:55.952,lng:-3.188,tag:"Luxury Hotel",type:"5-Star Hotel",region:"Scotland",fly:true,desc:"A Rocco Forte icon at the foot of Edinburgh's Royal Mile — sweeping castle views and unrivalled grandeur.",web:"https://www.roccofortehotels.com/hotels-and-resorts/the-balmoral-hotel",wiki:"The Balmoral Hotel"},
+  {name:"Broome Park Hotel",loc:"Canterbury, Kent",lat:51.218,lng:1.178,tag:"Country Estate",type:"Historic Hotel",region:"Kent",desc:"A stunning 17th-century baroque mansion set in 375 acres of Kent countryside.",web:"https://www.broomepark.co.uk",wiki:"Broome Park"},
+  {name:"The Granary Hotel",loc:"Shenstone, Kidderminster",lat:52.384,lng:-2.218,tag:"Barn & Hotel",type:"Rural Hotel",region:"Worcestershire",desc:"A beautifully converted rural hotel near Kidderminster.",web:"https://granary-hotel.co.uk"},
+  {name:"St Mary's Church, Harvington",loc:"Harvington, Kidderminster",lat:52.326,lng:-2.095,tag:"Church",type:"Parish Church",region:"Worcestershire",desc:"A picturesque village church near Harvington Hall."},
+  {name:"Westmead Hotel",loc:"Alvechurch, Birmingham",lat:52.352,lng:-1.960,tag:"Hotel Venue",type:"Hotel & Gardens",region:"Worcestershire",desc:"A well-loved wedding hotel on the edge of Birmingham.",web:"https://www.westmeadhotel.co.uk"},
+  {name:"The Wroxeter Hotel",loc:"Wroxeter, Shrewsbury",lat:52.659,lng:-2.665,tag:"Country Hotel",type:"Hotel & Gardens",region:"Shropshire",desc:"A charming country hotel beside the ruins of Roman Viroconium.",web:"https://www.thewroxeterhotel.co.uk"},
+  {name:"The West Mill",loc:"Darley Abbey, Derby",lat:52.949,lng:-1.477,tag:"Industrial Chic",type:"Mill Venue",region:"Derbyshire",desc:"A breathtaking converted Victorian cotton mill on the River Derwent.",web:"https://www.thewestmill.co.uk",wiki:"Darley Abbey Mills"},
+  {name:"Blakelands Country House",loc:"Bobbington, Stourbridge",lat:52.488,lng:-2.278,tag:"Country House",type:"House & Restaurant",region:"Staffordshire",desc:"An intimate country house restaurant venue near Stourbridge.",web:"https://www.blakelands.co.uk"},
+  {name:"The Mill Barns",loc:"Alveley, Bridgnorth",lat:52.469,lng:-2.377,tag:"Barn Venue",type:"Mill Barn",region:"Shropshire",desc:"Gorgeous converted mill barns in the Shropshire countryside.",web:"https://themillbarns-venue.co.uk",wiki:"Alveley"},
+  {name:"Gorcott Hall",loc:"Gorcott Hill, Redditch",lat:52.326,lng:-1.862,tag:"Historic Hall",type:"Tudor Hall",region:"Worcestershire",desc:"A privately owned Tudor farmhouse of extraordinary character.",web:"https://www.gorcotthall.co.uk"},
+  {name:"Birtsmorton Court",loc:"Birtsmorton, Worcestershire",lat:52.030,lng:-2.302,tag:"Historic Estate",type:"Moated Manor",region:"Worcestershire",desc:"A breathtaking moated medieval manor house.",web:"https://www.birtsmortoncourt.com",wiki:"Birtsmorton Court"},
+  {name:"Curradine Barns",loc:"Shrawley, Worcester",lat:52.282,lng:-2.248,tag:"Barn Venue",type:"Rural Barn",region:"Worcestershire",desc:"A beautifully designed barn venue in the heart of Worcestershire.",web:"https://www.curradinebarns.co.uk"},
+  {name:"Shustoke Barn",loc:"Shustoke, Coleshill",lat:52.488,lng:-1.673,tag:"Barn Venue",type:"Rural Barn",region:"Warwickshire",desc:"A charming converted barn in rural Warwickshire.",web:"https://crippsandco.com/shustoke-barn"},
+  {name:"The Bridge Community Church",loc:"Leeds",lat:53.796,lng:-1.523,tag:"Church Venue",type:"Community Church",region:"West Yorkshire",desc:"A vibrant, contemporary church venue in Leeds."},
+  {name:"St Chad Parish Hall",loc:"Otley Road, Leeds",lat:53.836,lng:-1.574,tag:"Church Hall",type:"Parish Hall",region:"West Yorkshire",desc:"A welcoming parish hall in north Leeds."},
+  {name:"Hampton Manor",loc:"Hampton in Arden, Solihull",lat:52.428,lng:-1.698,tag:"Country Estate",type:"Manor House",region:"West Midlands",desc:"A Michelin-starred manor house — intimate, award-winning, and utterly beautiful.",web:"https://www.hamptonmanor.com",wiki:"Hampton Manor"},
+  {name:"The Mount Hotel",loc:"Wolverhampton",lat:52.590,lng:-2.130,tag:"Hotel Venue",type:"Hotel",region:"West Midlands",desc:"A well-established wedding hotel in Wolverhampton.",web:"https://www.themounthotel.co.uk"},
+  {name:"The Bond Company",loc:"Digbeth, Birmingham",lat:52.473,lng:-1.891,tag:"Urban Venue",type:"Industrial Space",region:"Birmingham",desc:"A dramatically converted Victorian warehouse in Birmingham's creative quarter.",web:"https://digbethweddings.co.uk",wiki:"The Bond Company, Birmingham"},
+  {name:"Fazeley Studios",loc:"Digbeth, Birmingham",lat:52.474,lng:-1.887,tag:"Urban Venue",type:"Creative Studio",region:"Birmingham",desc:"One of Digbeth's coolest creative spaces.",web:"https://www.fazeleystudios.com"},
+  {name:"Hagley Hall",loc:"Hagley, Worcestershire",lat:52.430,lng:-2.108,tag:"Historic Hall",type:"Palladian House",region:"Worcestershire",desc:"A magnificent Palladian mansion — one of the grandest wedding settings in the Midlands.",web:"https://www.hagleyhall.com",wiki:"Hagley Hall"},
+  {name:"Riverside Hotel",loc:"Branston, Nuneaton",lat:52.508,lng:-1.452,tag:"Hotel Venue",type:"Riverside Hotel",region:"Warwickshire",desc:"A riverside hotel venue near Nuneaton."},
+  {name:"Nant Gwrtheyrn",loc:"Llithfaen, Pwllheli, North Wales",lat:52.982,lng:-4.492,tag:"Unique Venue",type:"Heritage Village",region:"Gwynedd, Wales",desc:"A dramatic, remote Welsh heritage village on the Llŷn Peninsula — perched above the sea.",web:"https://www.nantgwrtheyrn.org",wiki:"Nant Gwrtheyrn"},
+  {name:"Mythe Barn",loc:"Sheepy Magna, Atherstone",lat:52.607,lng:-1.548,tag:"Barn Venue",type:"Farm Barn",region:"Warwickshire",desc:"A beautifully restored 18th-century barn on a working farm in Warwickshire.",web:"https://www.mythebarn.co.uk"},
+  {name:"Belcote Farm Tipi",loc:"Belbroughton, Stourbridge",lat:52.393,lng:-2.104,tag:"Tipi Venue",type:"Outdoor & Tipi",region:"Worcestershire",desc:"A magical tipi wedding experience on a working farm near Belbroughton.",web:"https://www.belcotefarm.co.uk"},
+  {name:"Malvern Registry Office",loc:"Avenue Road, Malvern, Worcestershire",lat:52.113,lng:-2.319,tag:"Registry Office",type:"Civil Ceremony",region:"Worcestershire",desc:"Malvern's register office set against the dramatic backdrop of the Malvern Hills."},
+  {name:"The Mount Pleasant",loc:"Kingswinford",lat:52.510,lng:-2.168,tag:"Hotel Venue",type:"Hotel & Bar",region:"West Midlands",desc:"A friendly and relaxed venue in Kingswinford."},
+  {name:"Brockencote Hall",loc:"Chaddesley Corbett, Kidderminster",lat:52.358,lng:-2.138,tag:"Country House",type:"Hotel & Gardens",region:"Worcestershire",desc:"An elegant French-style country house hotel set in 70 acres near Kidderminster.",web:"https://www.brockencotehall.com",wiki:"Brockencote Hall"},
+  {name:"Hogarths Stone Manor",loc:"Stone, Kidderminster",lat:52.372,lng:-2.175,tag:"Country House",type:"Hotel & Grounds",region:"Worcestershire",desc:"A quirky and characterful 14th-century manor house hotel.",web:"https://www.hogarths.co.uk",wiki:"Stone House, Worcestershire"},
+  {name:"Smethwick Baptist Church",loc:"Smethwick, Birmingham",lat:52.496,lng:-1.970,tag:"Church",type:"Baptist Church",region:"West Midlands",desc:"A welcoming Baptist church in Smethwick."},
+  {name:"Walton Hall",loc:"Wellesbourne, Warwickshire",lat:52.190,lng:-1.590,tag:"Historic Hall",type:"Hotel & Grounds",region:"Warwickshire",desc:"A stunning neo-Gothic hall on its own island surrounded by a lake.",web:"https://www.waltonhallhotel.co.uk",wiki:"Walton Hall, Warwickshire"},
+  {name:"Forest of Arden Marriott",loc:"Meriden, Birmingham",lat:52.436,lng:-1.640,tag:"Hotel Venue",type:"Golf & Spa Hotel",region:"West Midlands",desc:"A grand Marriott hotel within beautiful Arden countryside.",web:"https://www.marriott.com/en-us/hotels/bhxfa-forest-of-arden-marriott-hotel-and-country-club"},
+  {name:"Llanthony Secunda Priory",loc:"Gloucester",lat:51.864,lng:-2.248,tag:"Historic Venue",type:"Medieval Priory",region:"Gloucestershire",desc:"A beautifully restored medieval priory in Gloucester.",web:"https://www.llanthonysecundapriory.co.uk",wiki:"Llanthony Secunda Priory"},
+  {name:"Rowton Castle",loc:"Halfway House, Shrewsbury",lat:52.679,lng:-2.878,tag:"Castle Venue",type:"Castle Hotel",region:"Shropshire",desc:"A magnificent 17th-century castle hotel near Shrewsbury.",web:"https://www.rowtoncastle.com",wiki:"Rowton Castle"},
+  {name:"Manor Hill House",loc:"Upton Warren, Bromsgrove",lat:52.315,lng:-2.052,tag:"Country House",type:"Exclusive Use",region:"Worcestershire",desc:"An intimate exclusive-use country house near Bromsgrove.",web:"https://www.manorhillhouse.co.uk"},
+  {name:"Fairlawns Hotel & Spa",loc:"Aldridge, Walsall",lat:52.598,lng:-1.918,tag:"Hotel Venue",type:"Hotel & Spa",region:"West Midlands",desc:"A highly regarded independent hotel and spa in Aldridge.",web:"https://www.fairlawns.co.uk",wiki:"Fairlawns Hotel"},
+  {name:"Brinsop Court",loc:"Brinsop, Herefordshire",lat:52.098,lng:-2.808,tag:"Historic Estate",type:"Manor House & Barn",region:"Herefordshire",desc:"A spectacular moated medieval manor and converted barn near Hereford.",web:"https://www.brinsopcourt.com",wiki:"Brinsop Court"},
+  {name:"Bourton Hall",loc:"Bourton on Dunsmore, Warwickshire",lat:52.347,lng:-1.368,tag:"Historic Hall",type:"Country Hall",region:"Warwickshire",desc:"A handsome Georgian country house in rural Warwickshire.",web:"https://www.bourton-hall.co.uk"},
+  {name:"Moor Hall Hotel & Spa",loc:"Sutton Coldfield",lat:52.574,lng:-1.842,tag:"Hotel Venue",type:"Hotel & Spa",region:"West Midlands",desc:"A beautiful Georgian manor house hotel set in 55 acres near Sutton Coldfield.",web:"https://www.moorhall.com",wiki:"Moor Hall, Sutton Coldfield"},
+  {name:"The Hundred House Hotel",loc:"Norton, Shifnal, Shropshire",lat:52.617,lng:-2.332,tag:"Country Hotel",type:"Inn & Gardens",region:"Shropshire",desc:"A wonderfully individual romantic inn with rambling herb gardens.",web:"https://www.hundredhouse.co.uk"},
+  {name:"Edgbaston Park Hotel",loc:"Edgbaston, Birmingham",lat:52.450,lng:-1.930,tag:"Hotel Venue",type:"Hotel & Gardens",region:"Birmingham",desc:"A sleek contemporary hotel on the University of Birmingham campus.",web:"https://www.edgbastonparkhotel.com",date:"2026-12-05",wiki:"University of Birmingham"},
+  {name:"Villa Park",loc:"Aston, Birmingham",lat:52.509,lng:-1.885,tag:"Unique Venue",type:"Football Stadium",region:"Birmingham",desc:"Home of Aston Villa — iconic stadium suites and an unforgettable backdrop.",web:"https://www.avfcevents.co.uk",wiki:"Villa Park"},
+  {name:"Grafton Manor",loc:"Bromsgrove, Worcestershire",lat:52.318,lng:-2.048,tag:"Country House",type:"Manor House Hotel",region:"Worcestershire",desc:"A magnificent 16th-century manor house — oak panelling, herb gardens, and genuine romance.",web:"https://www.graftonmanorhotel.co.uk",wiki:"Grafton Manor"},
+  {name:"Castle Bromwich Hall Hotel",loc:"Castle Bromwich, Birmingham",lat:52.507,lng:-1.789,tag:"Historic Hotel",type:"Hall & Gardens",region:"West Midlands",desc:"A Grade I listed manor house with formal walled gardens.",web:"https://www.castlebromwichhallhotel.co.uk",wiki:"Castle Bromwich Hall"},
+  {name:"Pendrell Hall",loc:"Codsall Wood, Wolverhampton",lat:52.631,lng:-2.231,tag:"Country Estate",type:"Exclusive Use",region:"Staffordshire",desc:"A magnificent exclusive-use Victorian country house near Wolverhampton.",web:"https://www.pendrellhall.co.uk",wiki:"Pendrell Hall"},
+  {name:"Elmbridge Farm",loc:"Droitwich, Worcestershire",lat:52.268,lng:-2.158,tag:"Farm Venue",type:"Farm & Barn",region:"Worcestershire",desc:"A charming working farm venue near Droitwich."},
+  {name:"Rowheath Pavilion",loc:"Bournville, Birmingham",lat:52.430,lng:-1.928,tag:"Unique Venue",type:"Pavilion & Park",region:"Birmingham",desc:"A lovely arts and crafts pavilion in the Bournville parklands.",web:"https://www.rowheathpavilion.co.uk"},
+  {name:"Warwick House",loc:"Southam, Warwickshire",lat:52.252,lng:-1.391,tag:"Country House",type:"Exclusive Use",region:"Warwickshire",desc:"An exclusive-use country house in Warwickshire.",web:"https://www.warwickhouseweddings.co.uk"},
+  {name:"The Waterfront, Barton Marina",loc:"Barton-under-Needwood, Burton-on-Trent",lat:52.748,lng:-1.741,tag:"Unique Venue",type:"Marina & Waterfront",region:"Staffordshire",desc:"A relaxed waterfront venue on the Trent & Mersey Canal.",web:"https://www.bartonmarina.co.uk"},
+  {name:"The Crown & Sandy's",loc:"Ombersley, Worcestershire",lat:52.293,lng:-2.211,tag:"Country Pub Venue",type:"Inn & Gardens",region:"Worcestershire",desc:"A beautifully restored coaching inn in the village of Ombersley.",web:"https://www.thecrownandsandys.co.uk"},
+  {name:"Kitchen Garden Cafe",loc:"Kings Heath, Birmingham",lat:52.421,lng:-1.889,tag:"Unique Venue",type:"Garden Cafe",region:"Birmingham",desc:"A magical walled kitchen garden venue in Kings Heath.",web:"https://www.kitchengardencafe.co.uk"},
+  {name:"The Dodford Inn",loc:"Dodford, Bromsgrove",lat:52.340,lng:-2.082,tag:"Country Pub Venue",type:"Pub & Garden",region:"Worcestershire",desc:"A gorgeous rural inn in the hamlet of Dodford.",web:"https://www.thedodfordinn.co.uk"},
+  {name:"Coton House Farm",loc:"Whittington, Lichfield",lat:52.672,lng:-1.778,tag:"Farm Venue",type:"Farm & Barn",region:"Staffordshire",desc:"A beautifully converted farm venue on the edge of Lichfield.",web:"https://www.cotonhousefarm.com",date:"2026-09-01"},
+  {name:"Exmouth Wedding Venue",loc:"Maer Lane, Exmouth, Devon",lat:50.613,lng:-3.411,tag:"Coastal Venue",type:"Beachside Venue",region:"Devon",desc:"A stunning coastal venue on the edge of Exmouth with breathtaking sea views.",web:"https://www.exmouthweddingvenue.co.uk"},
+  {name:"Hotel du Vin Stratford-upon-Avon",loc:"Stratford-upon-Avon, Warwickshire",lat:52.192,lng:-1.706,tag:"Boutique Hotel",type:"Hotel & Courtyard",region:"Warwickshire",desc:"A beautifully characterful Hotel du Vin in Shakespeare's home town.",web:"https://www.hotelduvin.com/locations/stratford-upon-avon"},
+  {name:"The Henley Room",loc:"Stratford-upon-Avon, Warwickshire",lat:52.191,lng:-1.710,tag:"Unique Venue",type:"Function Room",region:"Warwickshire",desc:"An intimate function venue in the heart of Stratford-upon-Avon."},
+  {name:"St John the Baptist Church, Wadworth",loc:"Wadworth, Doncaster",lat:53.461,lng:-1.161,tag:"Church",type:"Parish Church",region:"South Yorkshire",desc:"A beautiful historic parish church in the village of Wadworth near Doncaster."},
+  {name:"Owston Hall Hotel",loc:"Owston, Doncaster",lat:53.578,lng:-1.118,tag:"Historic Hotel",type:"Country House Hotel",region:"South Yorkshire",desc:"A stunning Georgian country house hotel near Doncaster.",web:"https://www.owstonhall.com",wiki:"Owston Hall"},
+  {name:"Ashton Lodge Country House",loc:"Street Ashton, Rugby, Warwickshire",lat:52.393,lng:-1.262,tag:"Country House",type:"Exclusive Use",region:"Warwickshire",desc:"A beautifully restored Edwardian country house in rural Warwickshire.",web:"https://ashtonlodgecountryhouse.com"},
+  {name:"Rhyse Farm",loc:"Tenbury Wells, Worcestershire",lat:52.314,lng:-2.606,tag:"Farm Venue",type:"Farm & Tipi",region:"Worcestershire",desc:"A wonderfully wild farm venue near Tenbury Wells.",web:"https://www.rhysefarm.co.uk",date:"2026-08-22"},
+  {name:"Shack Revolution",loc:"Hereford",lat:52.056,lng:-2.716,tag:"Unique Venue",type:"Outdoor & Glamping",region:"Herefordshire",desc:"An extraordinary outdoor wedding experience near Hereford — shacks, fire pits, and joyful rebellion.",web:"https://theshackrevolution.co.uk"},
+  {name:"Hanbury Barns",loc:"Hanbury, Burton-on-Trent",lat:52.796,lng:-1.738,tag:"Barn Venue",type:"Barn & Farm",region:"Staffordshire",desc:"A beautifully converted set of farm barns near Burton-on-Trent.",web:"https://hanburybarns-venue.co.uk",date:"2026-10-31"},
+  {name:"The Moat House",loc:"Acton Trussell, Stafford",lat:52.748,lng:-2.068,tag:"Country House",type:"Hotel & Waterside",region:"Staffordshire",desc:"A gorgeous black-and-white timbered manor beside the Staffordshire & Worcestershire Canal.",web:"https://www.moathouse.co.uk",date:"2026-11-07",wiki:"Acton Trussell"},
+  {name:"Sabrina Boat",loc:"River Severn, Shrewsbury",lat:52.709,lng:-2.749,tag:"Unique Venue",type:"River Boat",region:"Shropshire",desc:"A truly one-of-a-kind wedding on the River Severn in the heart of Shrewsbury.",boat:true,web:"https://sabrinaboat.co.uk"},
+  {name:"Harborne Golf Club",loc:"Harborne, Birmingham",lat:52.458,lng:-1.982,tag:"Club Venue",type:"Golf Club",region:"Birmingham",desc:"A well-appointed golf club venue in leafy Harborne.",web:"https://www.harbornegolfclub.org.uk"},
+  {name:"Bled Castle",loc:"Lake Bled, Slovenia",lat:46.393,lng:14.093,tag:"Castle Venue",type:"Medieval Castle",region:"Slovenia",desc:"One of Europe's most spectacular wedding settings — a medieval castle perched on a cliff above the impossibly beautiful Lake Bled.",intl:true,fly:true,web:"https://www.blejski-grad.si",wiki:"Bled Castle"},
+  {name:"Villa Ruza",loc:"Kolocep Island, Croatia",lat:42.688,lng:17.956,tag:"Island Villa",type:"Coastal Villa",region:"Dalmatia, Croatia",desc:"An extraordinary island villa on tiny Kolocep near Dubrovnik — azure Adriatic waters and the intimacy only a private island can offer.",intl:true,fly:true},
+  {name:"Gwesty'r Marine Hotel & Spa",loc:"Aberystwyth, Wales",lat:52.415,lng:-4.084,tag:"Coastal Hotel",type:"Spa Hotel",region:"Ceredigion, Wales",desc:"A grand seafront hotel gazing out over Cardigan Bay — sweeping sea views and the wild beauty of the Welsh coast.",web:"https://www.marinehotel.co.uk",wiki:"Marine Hotel, Aberystwyth"},
+  {name:"Peckforton Castle",loc:"Tarporley, Cheshire",lat:53.102,lng:-2.685,tag:"Castle Venue",type:"Castle Hotel",region:"Cheshire",desc:"A breathtaking Victorian Gothic castle in the Cheshire hills — dramatic sandstone towers and magnificent views.",web:"https://www.peckfortoncastle.co.uk",wiki:"Peckforton Castle"},
+  {name:"De Vere Tortworth Court",loc:"Tortworth, Gloucestershire",lat:51.637,lng:-2.358,tag:"Historic Hotel",type:"Gothic Manor Hotel",region:"Gloucestershire",desc:"A breathtaking Grade II* listed Victorian Gothic mansion set in 30 acres of Gloucestershire parkland.",web:"https://www.devere.co.uk/tortworth-court",wiki:"Tortworth Court"},
+  {name:"Black Country Living Museum",loc:"Dudley, West Midlands",lat:52.512,lng:-2.059,tag:"Unique Venue",type:"Heritage Museum",region:"West Midlands",desc:"One of the most extraordinary wedding venues in England — an open-air living museum of 1930s Black Country life.",web:"https://www.bclm.com",wiki:"Black Country Living Museum"},
+  {name:"Bromsgrove Registry Office",loc:"Bromsgrove, Worcestershire",lat:52.335,lng:-2.055,tag:"Registry Office",type:"Civil Ceremony",region:"Worcestershire",desc:"Bromsgrove's register office — a warm and welcoming space for couples making their vows."},
+  {name:"No3a",loc:"Aston Fields, Bromsgrove",lat:52.318,lng:-2.040,tag:"Unique Venue",type:"Boutique Event Space",region:"Worcestershire",desc:"A stylish and intimate boutique event space in Aston Fields, Bromsgrove.",web:"https://www.no3a.co.uk"},
+  {name:"Birmingham Botanical Gardens",loc:"Edgbaston, Birmingham",lat:52.470,lng:-1.926,tag:"Unique Venue",type:"Gardens & Glasshouses",region:"Birmingham",desc:"Fifteen acres of stunning historic gardens in the heart of Edgbaston — Victorian glasshouses, tropical plants, and manicured lawns.",web:"https://www.birminghambotanicalgardens.org.uk",wiki:"Birmingham Botanical Gardens"},
+  {name:"St John the Baptist Church, Halesowen",loc:"Halesowen Town Centre",lat:52.448,lng:-2.051,tag:"Church",type:"Parish Church",region:"West Midlands",desc:"The grand medieval parish church at the heart of Halesowen — magnificent stonework, beautiful stained glass, and a genuine sense of history.",wiki:"Halesowen Abbey"},
+  {name:"The Plough & Harrow",loc:"Hayley Road, Birmingham",lat:52.442,lng:-1.994,tag:"Country Pub Venue",type:"Pub & Garden",region:"Birmingham",desc:"A well-loved pub venue on Hayley Road — a warm, characterful setting with a relaxed atmosphere."},
+  {name:"Halesowen Masonic Centre",loc:"Halesowen, West Midlands",lat:52.449,lng:-2.049,tag:"Unique Venue",type:"Masonic Hall",region:"West Midlands",desc:"A distinguished and characterful Masonic centre in Halesowen — grand ceremonial rooms and formal elegance.",wiki:"Halesowen"},
+  {name:"St Bartholomew's Church, Glazeley",loc:"Glazeley, near Bridgnorth",lat:52.512,lng:-2.428,tag:"Church",type:"Community Church",region:"Shropshire",desc:"A beautifully preserved rural church in the tiny hamlet of Glazeley near Bridgnorth — now lovingly maintained as a community venue.",wiki:"Glazeley"},
+  {name:"The Bentley Brook Inn",loc:"Ashbourne, Derbyshire",lat:53.017,lng:-1.739,tag:"Country Hotel",type:"Inn & Gardens",region:"Derbyshire",desc:"A charming country inn on the edge of Ashbourne, nestled in the Peak District.",web:"https://www.bentleybrookinn.co.uk",wiki:"Ashbourne, Derbyshire"},
+  {name:"Holy Trinity Church, Belbroughton",loc:"Bradford Lane, Belbroughton",lat:52.397,lng:-2.111,tag:"Church",type:"Parish Church",region:"Worcestershire",desc:"A beautiful and well-loved parish church in the heart of Belbroughton village."},
+  {name:"Barns & Yard at Hanley Hall",loc:"Hanley Hall, Worcestershire",lat:52.082,lng:-2.218,tag:"Barn Venue",type:"Barn & Yard",region:"Worcestershire",desc:"A stunning collection of beautifully restored barns and courtyards within the grounds of historic Hanley Hall.",web:"https://www.barnsandyard.co.uk",wiki:"Hanley Castle"},
+  {name:"Oakfield Gardens",loc:"Claines, Worcester",lat:52.228,lng:-2.224,tag:"Unique Venue",type:"Gardens & Grounds",region:"Worcestershire",desc:"A beautiful private garden venue on the northern edge of Worcester.",web:"https://www.oakfieldgardens.co.uk"},
+  {name:"Lightwoods Park and House",loc:"Bearwood, Smethwick",lat:52.474,lng:-1.983,tag:"Historic Hall",type:"Park & House",region:"West Midlands",desc:"A beautiful Edwardian house set within Lightwoods Park in Bearwood — elegant period rooms and sweeping parkland.",wiki:"Lightwoods House"},
+  {name:"Marco Pierre White Steakhouse Birmingham",loc:"Wharfside Street, Birmingham",lat:52.477,lng:-1.910,tag:"Unique Venue",type:"Restaurant & Bar",region:"Birmingham",desc:"A glamorous restaurant venue on Birmingham's Brindleyplace waterfront — dark wood, gleaming brass, candlelight, and bold luxury.",web:"https://www.mpwrestaurants.co.uk/restaurants/birmingham"},
+  {name:"West Bridgford Registry Office",loc:"West Bridgford, Nottingham",lat:52.932,lng:-1.128,tag:"Registry Office",type:"Civil Ceremony",region:"Nottinghamshire",desc:"A well-appointed register office in leafy West Bridgford, just across the River Trent from Nottingham."},
+  {name:"Our Lady of Lourdes Church",loc:"Solihull, West Midlands",lat:52.412,lng:-1.774,tag:"Church",type:"Catholic Church",region:"West Midlands",desc:"A warm and welcoming Catholic church in Solihull."},
+  {name:"Nuthurst Grange Country House Hotel",loc:"Hockley Heath, Solihull",lat:52.355,lng:-1.766,tag:"Country House",type:"Hotel & Gardens",region:"Warwickshire",desc:"A delightful and intimate country house hotel tucked away down a leafy lane near Hockley Heath.",web:"https://www.nuthurst-grange.co.uk",wiki:"Hockley Heath"},
+  {name:"St Michael's & All Angels Church",loc:"Tettenhall, Wolverhampton",lat:52.607,lng:-2.172,tag:"Church",type:"Parish Church",region:"West Midlands",desc:"A striking Church of England parish church in the historic village of Tettenhall."},
+  {name:"Jinney Ring Art Cafe",loc:"Hanbury, Bromsgrove",lat:52.311,lng:-2.073,tag:"Unique Venue",type:"Arts Cafe & Garden",region:"Worcestershire",desc:"A wonderfully creative arts cafe venue in the Worcestershire countryside near Hanbury.",web:"https://www.jinneyring.co.uk",wiki:"Hanbury, Worcestershire"},
+  {name:"Our Lady & All Saints RC Church",loc:"Stourbridge, West Midlands",lat:52.456,lng:-2.148,tag:"Church",type:"Catholic Church",region:"West Midlands",desc:"A well-loved Roman Catholic church in Stourbridge."},
+  {name:"The Manor House Hotel",loc:"Moreton-in-Marsh, Gloucestershire",lat:51.999,lng:-1.701,tag:"Historic Hotel",type:"Country House Hotel",region:"Gloucestershire",desc:"A beautiful 16th-century manor house hotel in the heart of the Cotswolds market town of Moreton-in-Marsh.",web:"https://www.cotswold-inns-hotels.co.uk/the-manor-house",wiki:"Moreton-in-Marsh"},
+  {name:"The Boat Inn, Jackfield",loc:"Jackfield, Telford, Shropshire",lat:52.620,lng:-2.479,tag:"Unique Venue",type:"Riverside Inn",region:"Shropshire",desc:"A wonderfully characterful riverside inn on the banks of the River Severn in the Ironbridge Gorge UNESCO World Heritage site.",},
+  {name:"Church of All Saints, Odell",loc:"Odell, Bedfordshire",lat:52.219,lng:-0.578,tag:"Church",type:"Parish Church",region:"Bedfordshire",desc:"A magnificent medieval parish church in the beautiful Bedfordshire village of Odell — ancient stonework, a soaring tower, and a wonderfully peaceful rural setting beside the River Great Ouse.",wiki:"All Saints Church, Odell"},
+  {name:"Himley Cricket Club",loc:"Himley, Staffordshire",lat:52.527,lng:-2.162,tag:"Unique Venue",type:"Cricket Club",region:"Staffordshire",desc:"A wonderfully characterful cricket club venue in the heart of Himley — a classic English setting with manicured grounds, a charming pavilion, and the kind of understated, quintessentially British atmosphere that makes for beautifully relaxed and natural wedding photography."},
+  {name:"St Paul's House",loc:"St Paul's Square, Birmingham",lat:52.4847,lng:-1.9026,tag:"Unique Venue",type:"Events Venue",region:"Birmingham",desc:"A stunning Grade II listed Victorian gothic building on the edge of the iconic St Paul's Square in Birmingham's Jewellery Quarter — dramatic architecture, exposed brick, and an atmosphere that feels entirely its own.",web:"https://www.stpaulshouse.com",wiki:"St Paul's Square, Birmingham"},
+  {name:"Benjamins Banqueting Suites",loc:"Halesowen, West Midlands",lat:52.4497,lng:-2.0492,tag:"Unique Venue",type:"Banqueting Suite",region:"West Midlands",desc:"A characterful banqueting venue in a beautifully repurposed 1868 Primitive Methodist Chapel in the heart of Halesowen — grand rooms, a warm atmosphere, and over 600 weddings worth of experience behind them.",web:"https://benjaminsbanquet.co.uk",date:"2026-09-26"},
+  {name:"Christ Church The Quinton",loc:"Quinton, Birmingham",lat:52.4598,lng:-2.0012,tag:"Church",type:"Parish Church",region:"Birmingham",desc:"A beautiful red sandstone church built in 1840 on Quinton Hill, with a striking Early English interior, Victorian stained glass, and a genuine sense of history — the parish church of Quinton for nearly two centuries.",date:"2026-12-05"},
+  {name:"Stanbrook Abbey Hotel",loc:"Callow End, Worcester",lat:52.1508,lng:-2.2654,tag:"Historic Hotel",type:"Abbey Hotel",region:"Worcestershire",desc:"A breathtaking Grade II listed former monastery in 26 acres of Worcestershire countryside — dramatic stone cloisters, gothic stained glass, the magnificent Callow Great Hall, and a Willow Lake that photographers dream about.",web:"https://www.handpickedhotels.co.uk/stanbrook-abbey/weddings",wiki:"Stanbrook Abbey",date:"2027-06-03"},
+  {name:"Cain Manor",loc:"Headley Down, Bordon, Hampshire",lat:51.122,lng:-0.820,tag:"Country House",type:"Manor House",region:"Hampshire / Surrey Border",desc:"A romantic Elizabethan manor house at the end of a long winding woodland drive, perched on the brow of a hill with far-reaching views across the Surrey Hills. Original oak beams, weathered flagstones and a triple-height Music Room make this one of the most characterful exclusive-use wedding venues in the south of England.",web:"https://harperweddingvenues.co.uk/cain-manor/welcome/",wiki:"Cain Manor"},
+];
+
+// ── MARKERS ──
+function pinClass(v){
+  if(v.boat) return 'boat';
+  if(v.intl) return 'intl';
+  if(v.tag==='Registry Office') return 'registry';
+  if(['Church','Church Venue','Church Hall'].includes(v.tag)) return 'church';
+  return 'default';
+}
+
+// Google Street View Static API for hero images (no API key needed for embed)
+// Uses OpenStreetMap Nominatim to fetch a placeholder image based on location
+// ── WIKIMEDIA IMAGE LOOKUP ──
+// Each venue has an optional `wiki` search term. We query the Wikimedia
+// API for a high-quality exterior image. If nothing is found, no image shows.
+function fetchWikimediaImage(searchTerm, onSuccess) {
+  if (!searchTerm) return;
+  const url = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(searchTerm)}&prop=pageimages&format=json&pithumbsize=800&origin=*`;
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      const pages = data.query && data.query.pages;
+      if (!pages) return;
+      const page = Object.values(pages)[0];
+      if (page && page.thumbnail && page.thumbnail.source) {
+        onSuccess(page.thumbnail.source);
+      }
+    })
+    .catch(() => {}); // silently fail — no image shown
+}
+
+// Future venue filtering — venues with a `date` field only appear on/after that date
+const today = new Date();
+today.setHours(0,0,0,0);
+
+// Count only live venues for the animated counter
+const liveVenueCount = venues.filter(v => {
+  if (!v.date) return true;
+  const d = new Date(v.date);
+  return d <= today;
+}).length;
+
+// Override counter with accurate live count
+document.getElementById('cv').textContent = liveVenueCount + '+';
+
+venues.forEach(v=>{
+  // Skip if venue has a future date
+  if (v.date) {
+    const venueDate = new Date(v.date);
+    if (venueDate > today) return;
+  }
+  const cls=pinClass(v);
+  const size=v.intl?[28,28]:[22,22];
+  const anchor=(v.boat||v.intl)?[size[0]/2,size[1]/2]:[size[0]/2,size[1]];
+  const icon=L.divIcon({className:'',html:`<div class="venue-pin ${cls}"></div>`,iconSize:size,iconAnchor:anchor});
+  const marker=L.marker([v.lat,v.lng],{icon}).addTo(map);
+  marker.on('click',()=>openPanel(v));
+});
+
+// ── PANEL ──
+const panel=document.getElementById('panel');
+const heroImg=document.getElementById('venue-hero');
+const websiteBtn=document.getElementById('website-btn');
+
+function openPanel(v){
+  // Load Wikimedia image if venue has a wiki search term
+  heroImg.style.display = 'none';
+  heroImg.classList.remove('loaded');
+  heroImg.src = '';
+  if (v.wiki) {
+    fetchWikimediaImage(v.wiki, (imgUrl) => {
+      heroImg.style.display = '';
+      heroImg.src = imgUrl;
+      heroImg.alt = v.name;
+    });
+  }
+
+  document.getElementById('ptag').textContent=v.tag.toUpperCase();
+  document.getElementById('pname').textContent=v.name.toUpperCase();
+  document.getElementById('ploc').textContent=v.loc.toUpperCase();
+  document.getElementById('pdesc').textContent=v.desc;
+  document.getElementById('pregion').textContent=v.region.toUpperCase();
+  document.getElementById('ptype').textContent=v.type.toUpperCase();
+
+  // Website button
+  if(v.web){
+    websiteBtn.href=v.web;
+    websiteBtn.style.display='inline-block';
+  } else {
+    websiteBtn.style.display='none';
+  }
+
+  panel.classList.add('open');
+}
+
+const pcloseBtn = document.getElementById('pclose');
+function closePanel(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  panel.classList.remove('open');
+}
+pcloseBtn.addEventListener('click', closePanel);
+pcloseBtn.addEventListener('touchend', closePanel, {passive: false});
+let psY=0,pDrag=false;
+panel.addEventListener('touchstart',e=>{
+  // Don't initiate drag if touching the close button
+  if(e.target.id==='pclose'||e.target.closest('#pclose')) return;
+  psY=e.touches[0].clientY;pDrag=true;
+},{passive:true});
+panel.addEventListener('touchmove',e=>{
+  if(pDrag&&e.touches[0].clientY-psY>60){panel.classList.remove('open');pDrag=false;}
+},{passive:true});
+panel.addEventListener('touchend',()=>pDrag=false,{passive:true});
+map.on('click',()=>panel.classList.remove('open'));
+
+// ── ZOOM & FULLSCREEN ──
+document.getElementById('zi').addEventListener('click',()=>map.zoomIn());
+document.getElementById('zo').addEventListener('click',()=>map.zoomOut());
+
+const fsBtn=document.getElementById('fs-btn');
+function updateFsIcon(){
+  fsBtn.textContent=document.fullscreenElement?'⛶':'⛶';
+}
+fsBtn.addEventListener('click',()=>{
+  if(!document.fullscreenElement){
+    document.documentElement.requestFullscreen().catch(()=>{});
+    fsBtn.textContent='✕';
+  } else {
+    document.exitFullscreen().catch(()=>{});
+    fsBtn.textContent='⛶';
+  }
+});
+document.addEventListener('fullscreenchange',()=>{
+  fsBtn.textContent=document.fullscreenElement?'✕':'⛶';
+});
+
+// ── LEGEND TOGGLE ──
+document.getElementById('legend-btn').addEventListener('click',()=>{
+  document.getElementById('legend').classList.toggle('mobile-show');
+});
+
+// ── REVEAL SEQUENCE ──
+// Map is already set to wide zoom (5) from init — no jump needed
+const intro=document.getElementById('intro');
+const fadeOverlay=document.getElementById('fade-overlay');
+
+// Attach explore button listener robustly
+document.getElementById('explore-btn').addEventListener('click',()=>{
+  // ── STEP 1: Fade out intro text ──
+  intro.classList.add('hide');
+
+  // ── STEP 2: Bring in dark overlay ──
+  setTimeout(()=>{
+    fadeOverlay.classList.add('active');
+  }, 400);
+
+  // ── STEP 3: Start 2s fade to reveal map ──
+  setTimeout(()=>{
+    fadeOverlay.classList.remove('active');
+    fadeOverlay.classList.add('reveal');
+  }, 700);
+
+  // ── STEP 4: Show map UI chrome ──
+  setTimeout(()=>{
+    document.getElementById('ui-top').classList.add('show');
+    document.getElementById('map-controls').classList.add('show');
+    document.getElementById('legend').classList.add('show');
+    document.getElementById('legend-btn').classList.add('show');
+  }, 1200);
+
+  // ── STEP 5: Begin cinematic fly-in ──
+  setTimeout(()=>{
+    map.flyTo([52.46,-2.05],9,{
+      animate:true,
+      duration:4.5,
+      easeLinearity:0.1,
+    });
+  }, 1800);
+
+  // ── STEP 6: After fly-in lands, launch plane sequence ──
+  setTimeout(()=>{ runFlightSequence(); }, 6500);
+});
+
+// ── SCREEN ORIENTATION ──
+window.addEventListener('resize',()=>{
+  setTimeout(()=>map.invalidateSize(),200);
+});
+
+
+
+// ── PLANE ANIMATION ──
+// Key principle: map stays zoomed in on Midlands the whole time.
+// Planes fly from Birmingham toward international venues — arcs go off-screen,
+// implying great distance. Uses CSS pixel animation, NOT Leaflet lat/lng tracking.
+
+const BHAM_LAT = 52.48, BHAM_LNG = -1.90;
+
+function getFlyVenues() {
+  return venues.filter(v => v.fly === true);
+}
+
+// Convert lat/lng to screen pixel at current map state
+function toScreen(lat, lng) {
+  const p = map.latLngToContainerPoint(L.latLng(lat, lng));
+  return { x: p.x, y: p.y };
+}
+
+// Quadratic bezier point at t
+function bezier(t, p0, cp, p1) {
+  const mt = 1 - t;
+  return {
+    x: mt*mt*p0.x + 2*mt*t*cp.x + t*t*p1.x,
+    y: mt*mt*p0.y + 2*mt*t*cp.y + t*t*p1.y
+  };
+}
+
+// Animate one plane along a bezier arc from Birmingham to destination
+// The arc curves upward (toward top of screen) suggesting altitude
+function flyPlane(planeEl, destLat, destLng, durationMs, onDone) {
+  const from = toScreen(BHAM_LAT, BHAM_LNG);
+  const to   = toScreen(destLat, destLng);
+
+  // Control point: above and between the two points — creates a nice arc
+  const cp = {
+    x: (from.x + to.x) * 0.5,
+    y: Math.min(from.y, to.y) - Math.abs(to.x - from.x) * 0.45 - 60
+  };
+
+  // Position plane at Birmingham, make visible
+  planeEl.style.left = (from.x - 14) + 'px';
+  planeEl.style.top  = (from.y - 14) + 'px';
+  planeEl.style.opacity = '0';
+  planeEl.style.transition = 'none';
+
+  // Force reflow then fade in
+  planeEl.offsetHeight;
+  planeEl.style.transition = 'opacity 0.35s ease';
+  planeEl.style.opacity = '1';
+
+  const startTime = performance.now();
+
+  function tick(now) {
+    const raw = (now - startTime) / durationMs;
+    const t = Math.min(raw, 1);
+    // Ease in-out
+    const ease = t < 0.5 ? 2*t*t : -1 + (4-2*t)*t;
+
+    const pos = bezier(ease, from, cp, to);
+
+    // Heading: sample slightly ahead for rotation
+    const t2 = Math.min(ease + 0.02, 1);
+    const pos2 = bezier(t2, from, cp, to);
+    const angle = Math.atan2(pos2.y - pos.y, pos2.x - pos.x) * 180 / Math.PI;
+
+    planeEl.style.left = (pos.x - 14) + 'px';
+    planeEl.style.top  = (pos.y - 14) + 'px';
+    // ✈️ emoji points up-right (~45° naturally), atan2 gives east=0°
+    // Offset by +45° so nose aligns with direction of travel
+    planeEl.style.transform = `rotate(${angle + 45}deg)`;
+
+    if (t < 1) {
+      requestAnimationFrame(tick);
+    } else {
+      // Reached destination — fade out
+      planeEl.style.transition = 'opacity 0.5s ease';
+      planeEl.style.opacity = '0';
+      setTimeout(onDone, 600);
+    }
+  }
+  requestAnimationFrame(tick);
+}
+
+// Draw a dashed SVG arc (purely decorative — fixed pixel coords)
+function drawSvgArc(svgEl, from, to, cp, arcId) {
+  let path = document.getElementById(arcId);
+  if (!path) {
+    path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.id = arcId;
+    path.setAttribute('class', 'flight-arc');
+    svgEl.appendChild(path);
+  }
+  path.setAttribute('d', `M${from.x},${from.y} Q${cp.x},${cp.y} ${to.x},${to.y}`);
+  // Fade arc in
+  path.style.transition = 'none';
+  path.style.opacity = '0';
+  path.offsetHeight;
+  path.style.transition = 'opacity 0.5s ease';
+  path.style.opacity = '0.45';
+  return path;
+}
+
+function fadeRemoveArc(path) {
+  if (!path) return;
+  path.style.transition = 'opacity 0.5s ease';
+  path.style.opacity = '0';
+  setTimeout(() => path.remove(), 600);
+}
+
+// Main sequence: called once after map fly-in settles
+function runFlightSequence() {
+  const intlVenues = getFlyVenues();
+  if (!intlVenues.length) return;
+
+  const svgEl = document.getElementById('flight-paths');
+  const plane1 = document.getElementById('plane-1');
+  const plane2 = document.getElementById('plane-2');
+  const plane3 = document.getElementById('plane-3');
+  const planeEls = [plane1, plane2, plane3];
+
+  // Wait for map to fully settle at final zoom before sampling coordinates
+  // Use moveend event to be certain
+  function onMapSettled() {
+    runSequence(0);
+  }
+
+  // If map is still moving, wait for it; otherwise fire immediately
+  if (map._animatingZoom || map._moving) {
+    map.once('moveend', onMapSettled);
+  } else {
+    onMapSettled();
+  }
+
+  function runSequence(idx) {
+    if (idx >= intlVenues.length) return; // all done
+
+    const dest = intlVenues[idx];
+    const planeEl = planeEls[idx % planeEls.length];
+
+    // Launch this plane — all planes take off together, staggered by 500ms each
+    flyPlane(planeEl, dest.lat, dest.lng, 5200, () => {});
+
+    // Next plane takes off 500ms later (simultaneous stagger)
+    setTimeout(() => runSequence(idx + 1), 500);
+  }
+}
+
+</script>
+</body>
+</html>
